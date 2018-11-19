@@ -74,7 +74,7 @@ type getResponseClient struct {
 	c      client.BaseClient
 	apiKey string
 	domain string
-	url    string
+	apiUrl string
 }
 
 func (g *getResponseClient) buildDefaultHeaders() http.Header {
@@ -89,10 +89,12 @@ func (g *getResponseClient) buildDefaultHeaders() http.Header {
 }
 
 // NewClient returns a new pushy client
-func NewClient(apiKey string, apiUrl string, timeout time.Duration) Client {
+func NewClient(apiUrl, apiKey, domain string, timeout time.Duration) Client {
 	return &getResponseClient{
 		c:      client.NewBaseClient(buildSvcFinder(apiUrl), "getresponse", true, timeout, nil),
 		apiKey: apiKey,
+		apiUrl: apiUrl,
+		domain: domain,
 	}
 }
 
