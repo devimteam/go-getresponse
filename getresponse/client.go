@@ -277,7 +277,7 @@ func (g *getResponseClient) parseError(resp []byte) error {
 	errRet := ErrorResponse{}
 	err := json.Unmarshal(resp, &errRet)
 	if err != nil {
-		return errors.New("could not unmarshal error response")
+		return errors.New(fmt.Sprintf("could not unmarshal error response: %s", string(resp)))
 	}
 	return errors.New(errRet.Message)
 }
