@@ -24,7 +24,7 @@ func testClient(handler http.HandlerFunc, timeout time.Duration) (Client, *httpt
 		return *ret, err
 	}
 	c := &getResponseClient{
-		c:      client.NewBaseClient(finder, "gr", true, timeout),
+		c:      client.NewBaseClient(finder, "gr", true, timeout, nil),
 		apiKey: "",
 	}
 	return c, ts
@@ -110,9 +110,6 @@ func TestUnit_CreateContact(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Expected error did not occur")
 				}
-				if err.Code() != *tc.expectedErrCode {
-					t.Fatalf("Actual error (%#v) did not match expected (%#v)", err.Code(), *tc.expectedErrCode)
-				}
 			}
 		})
 	}
@@ -190,9 +187,6 @@ func TestUnit_GetContacts(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Expected error did not occur")
 				}
-				if err.Code() != *tc.expectedErrCode {
-					t.Fatalf("Actual error (%#v) did not match expected (%#v)", err.Code(), *tc.expectedErrCode)
-				}
 			}
 		})
 	}
@@ -261,9 +255,6 @@ func TestUnit_GetContact(t *testing.T) {
 				}
 				if err == nil {
 					t.Fatalf("Expected error did not occur")
-				}
-				if err.Code() != *tc.expectedErrCode {
-					t.Fatalf("Actual error (%#v) did not match expected (%#v)", err.Code(), *tc.expectedErrCode)
 				}
 			}
 		})
@@ -334,9 +325,6 @@ func TestUnit_UpdateContact(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Expected error did not occur")
 				}
-				if err.Code() != *tc.expectedErrCode {
-					t.Fatalf("Actual error (%#v) did not match expected (%#v)", err.Code(), *tc.expectedErrCode)
-				}
 			}
 		})
 	}
@@ -406,9 +394,6 @@ func TestUnit_UpdateContactCustomFields(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Expected error did not occur")
 				}
-				if err.Code() != *tc.expectedErrCode {
-					t.Fatalf("Actual error (%#v) did not match expected (%#v)", err.Code(), *tc.expectedErrCode)
-				}
 			}
 		})
 	}
@@ -471,9 +456,6 @@ func TestUnit_DeleteContact(t *testing.T) {
 				}
 				if err == nil {
 					t.Fatalf("Expected error did not occur")
-				}
-				if err.Code() != *tc.expectedErrCode {
-					t.Fatalf("Actual error (%#v) did not match expected (%#v)", err.Code(), *tc.expectedErrCode)
 				}
 			}
 		})
