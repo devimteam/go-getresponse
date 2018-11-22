@@ -154,7 +154,7 @@ func (g *getResponseClient) GetContacts(ctx context.Context, queryHash map[strin
 	result := make([]Contact, 0)
 	status, ret, err := g.c.MakeRequest(ctx, http.MethodGet, slug, query, g.buildDefaultHeaders(), nil)
 	if err != nil {
-		return result, err
+		return nil, fmt.Errorf("%s: %s", err, string(ret))
 	}
 
 	if status < 200 || status >= 400 {
@@ -181,7 +181,7 @@ func (g *getResponseClient) GetContact(ctx context.Context, ID string, fields []
 	result := Contact{}
 	status, ret, err := g.c.MakeRequest(ctx, http.MethodGet, slug, query, g.buildDefaultHeaders(), nil)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("%s: %s", err, string(ret))
 	}
 
 	if status < 200 || status >= 400 {
@@ -208,7 +208,7 @@ func (g *getResponseClient) UpdateContact(ctx context.Context, ID string, newDat
 
 	status, ret, err := g.c.MakeRequest(ctx, http.MethodPost, slug, nil, g.buildDefaultHeaders(), body)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("%s: %s", err, string(ret))
 	}
 
 	if status < 200 || status >= 400 {
@@ -236,7 +236,7 @@ func (g *getResponseClient) UpdateContactCustomFields(ctx context.Context, ID st
 
 	status, ret, err := g.c.MakeRequest(ctx, http.MethodPost, slug, nil, g.buildDefaultHeaders(), body)
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("%s: %s", err, string(ret))
 	}
 
 	if status < 200 || status >= 400 {
@@ -261,7 +261,7 @@ func (g *getResponseClient) DeleteContact(ctx context.Context, ID string, messag
 
 	status, ret, err := g.c.MakeRequest(ctx, http.MethodDelete, slug, query, g.buildDefaultHeaders(), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %s", err, string(ret))
 	}
 
 	if status < 200 || status >= 400 {
