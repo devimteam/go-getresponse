@@ -279,7 +279,7 @@ func (g *getResponseClient) parseError(resp []byte) error {
 	if err != nil {
 		return errors.New(fmt.Sprintf("could not unmarshal error response: %s", string(resp)))
 	}
-	return errors.New(errRet.Message)
+	return fmt.Errorf("%s: %s", errRet.Message, strings.Join(errRet.Context, ";"))
 }
 
 func buildSvcFinder(link string) func(string, bool) (url.URL, error) {
