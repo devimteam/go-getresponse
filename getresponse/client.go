@@ -117,7 +117,7 @@ func (g *getResponseClient) CreateContact(ctx context.Context, email string, nam
 
 	status, ret, err := g.c.MakeRequest(ctx, http.MethodPost, slug, nil, g.buildDefaultHeaders(), body)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %s", err, string(ret))
 	}
 
 	if status < 200 || status >= 400 {
