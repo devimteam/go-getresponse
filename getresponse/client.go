@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/healthimation/go-client/client"
 )
 
 //Error codes
@@ -71,7 +69,7 @@ type Client interface {
 }
 
 type getResponseClient struct {
-	c      client.BaseClient
+	c      BaseClient
 	apiKey string
 	domain string
 	apiUrl string
@@ -89,9 +87,9 @@ func (g *getResponseClient) buildDefaultHeaders() http.Header {
 }
 
 // NewClient returns a new pushy client
-func NewClient(apiUrl, apiKey, domain string, timeout time.Duration) Client {
+func NewClient(apiUrl, apiKey, domain string, timeout time.Duration, beforeFunc beforeFunc, afterFunc afterFunc) Client {
 	return &getResponseClient{
-		c:      client.NewBaseClient(buildSvcFinder(apiUrl), "getresponse", true, timeout, nil),
+		c:      NewBaseClient(buildSvcFinder(apiUrl), "getresponse", true, timeout, nil, beforeFunc, afterFunc),
 		apiKey: apiKey,
 		apiUrl: apiUrl,
 		domain: domain,
@@ -110,7 +108,7 @@ func (g *getResponseClient) CreateContact(ctx context.Context, email string, nam
 		IPAddress:         ipAddress,
 	}
 
-	body, err := client.ObjectToJSONReader(bodyObj)
+	body, err := ObjectToJSONReader(bodyObj)
 	if err != nil {
 		return err
 	}
@@ -201,7 +199,7 @@ func (g *getResponseClient) UpdateContact(ctx context.Context, ID string, newDat
 	result := Contact{}
 	slug := fmt.Sprintf("/v3/contacts/%s", ID)
 
-	body, err := client.ObjectToJSONReader(newData)
+	body, err := ObjectToJSONReader(newData)
 	if err != nil {
 		return result, err
 	}
@@ -229,7 +227,7 @@ func (g *getResponseClient) UpdateContactCustomFields(ctx context.Context, ID st
 	slug := fmt.Sprintf("/v3/contacts/%s/custom-fields", ID)
 
 	bodyObj := updateCustomFieldRequest{customFields}
-	body, err := client.ObjectToJSONReader(bodyObj)
+	body, err := ObjectToJSONReader(bodyObj)
 	if err != nil {
 		return result, err
 	}
