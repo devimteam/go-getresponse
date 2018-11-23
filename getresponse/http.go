@@ -84,6 +84,11 @@ func (c *client) MakeRequest(ctx context.Context, method string, slug string, qu
 	}
 
 	resp, err := c.client.Do(req)
+
+	if c.afterFunc != nil {
+		ctx = c.afterFunc(ctx, req, resp)
+	}
+
 	if err != nil {
 		return 0, nil, glitch.NewDataError(err, ErrorRequestError, "Could not make the request")
 	}
@@ -91,10 +96,6 @@ func (c *client) MakeRequest(ctx context.Context, method string, slug string, qu
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}()
-
-	if c.afterFunc != nil {
-		ctx = c.afterFunc(ctx, req, resp)
-	}
 
 	ret, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
