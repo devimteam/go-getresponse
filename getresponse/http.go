@@ -34,8 +34,8 @@ type BaseClient interface {
 	MakeRequest(ctx context.Context, method string, slug string, query url.Values, headers http.Header, body io.Reader) (int, []byte, glitch.DataError)
 }
 
-type beforeFunc func(ctx context.Context, r *http.Request)
-type afterFunc func(ctx context.Context, r *http.Request, resp *http.Response)
+type beforeFunc func(ctx context.Context, r *http.Request) context.Context
+type afterFunc func(ctx context.Context, r *http.Request, resp *http.Response) context.Context
 
 type client struct {
 	finder      ServiceFinder
@@ -80,7 +80,7 @@ func (c *client) MakeRequest(ctx context.Context, method string, slug string, qu
 	}
 
 	if c.beforeFunc != nil {
-		c.beforeFunc(ctx, req)
+		ctx = c.beforeFunc(ctx, req)
 	}
 
 	resp, err := c.client.Do(req)
@@ -93,7 +93,7 @@ func (c *client) MakeRequest(ctx context.Context, method string, slug string, qu
 	}()
 
 	if c.afterFunc != nil {
-		c.afterFunc(ctx, req, resp)
+		ctx = c.afterFunc(ctx, req, resp)
 	}
 
 	ret, err := ioutil.ReadAll(resp.Body)
