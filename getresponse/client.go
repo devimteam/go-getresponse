@@ -1,46 +1,46 @@
 package getresponse
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 )
 
-//Error codes
+// Error codes
 const (
 	XAuthTokenHeader = "X-Auth-Token"
 	XDomainHeader    = "X-Domain"
 
-	ErrorAPI = "ERROR_API"
-
 	// described @ https://apidocs.getresponse.com/v3/errors
-	ErrorInternalError          = 1
-	ErrorValidationError        = 1000
-	errorelatedResourceNotFound = 1001
-	ErrorForbidden              = 1002
-	ErrorInvalidParameterFormat = 1003
-	ErrorInvalidHash            = 1004
-	ErrorMissingParameter       = 1005
-	ErrorInvalidParameterType   = 1006
-	ErrorInvalidParameterLength = 1007
-	erroresourceAlreadyExists   = 1008
-	erroresourceInUse           = 1009
-	ErrorExternalError          = 1010
-	ErrorMessageAlreadySending  = 1011
-	ErrorMessageParsing         = 1012
-	erroresourceNotFound        = 1013
-	ErrorAuthenticationFailure  = 1014
-	errorequestQuotaReached     = 1015
-	ErrorTemporarilyBlocked     = 1016
-	ErrorPermanentlyBlocked     = 1017
-	ErrorIPBlocked              = 1018
-	ErrorInvalidRequestHeaders  = 1021
+	ErrInternalError           = 1
+	ErrValidationError         = 1000
+	ErrRelatedResourceNotFound = 1001
+	ErrForbidden               = 1002
+	ErrInvalidParameterFormat  = 1003
+	ErrInvalidHash             = 1004
+	ErrMissingParameter        = 1005
+	ErrInvalidParameterType    = 1006
+	ErrInvalidParameterLength  = 1007
+	ErrResourceAlreadyExists   = 1008
+	ErrResourceInUse           = 1009
+	ErrExternalError           = 1010
+	ErrMessageAlreadySending   = 1011
+	ErrMessageParsing          = 1012
+	ErrResourceNotFound        = 1013
+	ErrAuthenticationFailure   = 1014
+	ErrequestQuotaReached      = 1015
+	ErrTemporarilyBlocked      = 1016
+	ErrPermanentlyBlocked      = 1017
+	ErrIPBlocked               = 1018
+	ErrInvalidRequestHeaders   = 1021
+	ErrRequestForbidden        = 1023
 )
 
 var (
@@ -50,32 +50,196 @@ var (
 // Client can make requests to the GR api
 type Client interface {
 	// CreateContact - https://apidocs.getresponse.com/v3/resources/contacts#contacts.create
-	CreateContact(ctx context.Context, email string, name *string, dayOfCycle *int32, campaignID string, customFields []CustomField, ipAddress *string) error
+	CreateContact(ctx context.Context, request *CreateContactRequest) error
 
 	// GetContacts - https://apidocs.getresponse.com/v3/resources/contacts#contacts.get.all
-	GetContacts(ctx context.Context, queryHash map[string]string, fields []string, sortHash map[string]string, page int32, perPage int32, additionalFlags *string) ([]Contact, error)
+	GetContacts(ctx context.Context, request *GetContactsRequest) (*GetContactsResponse, error)
 
 	// Get Contact - https://apidocs.getresponse.com/v3/resources/contacts#contacts.get
-	GetContact(ctx context.Context, ID string, fields []string) (Contact, error)
+	GetContact(ctx context.Context, request *GetContactRequest) (*GetContactResponse, error)
 
 	// UpdateContact - https://apidocs.getresponse.com/v3/resources/contacts#contacts.update
-	UpdateContact(ctx context.Context, ID string, newData Contact) (Contact, error)
+	UpdateContact(ctx context.Context, request *UpdateContactRequest) (*UpdateContactResponse, error)
 
 	// UpdateContactCustomFields - https://apidocs.getresponse.com/v3/resources/contacts#contacts.upsert.custom-fields
-	UpdateContactCustomFields(ctx context.Context, ID string, customFields []CustomField) (Contact, error)
+	UpdateContactCustomFields(ctx context.Context, request *UpdateContactCustomFieldsRequest) (*UpdateContactCustomFieldsResponse, error)
 
 	// DeleteContact - https://apidocs.getresponse.com/v3/resources/contacts#contacts.delete
-	DeleteContact(ctx context.Context, ID string, messageID string, ipAddress string) error
+	DeleteContact(ctx context.Context, request *DeleteContactRequest) error
 }
 
 type getResponseClient struct {
-	c      BaseClient
+	c      *http.Client
 	apiKey string
 	domain string
 	apiUrl string
 }
 
-func (g *getResponseClient) buildDefaultHeaders() http.Header {
+// NewClient returns a new pushy client
+func NewClient(apiUrl, apiKey, domain string, client *http.Client) Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	return &getResponseClient{
+		c:      client,
+		apiKey: apiKey,
+		apiUrl: apiUrl,
+		domain: domain,
+	}
+}
+
+func (g *getResponseClient) CreateContact(ctx context.Context, request *CreateContactRequest) error {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+
+	status, ret, err := g.roundTrip(ctx, http.MethodPost, "/v3/contacts", nil, body)
+	return g.checkGetResponseError(status, ret, err)
+}
+
+func (g *getResponseClient) GetContacts(ctx context.Context, req *GetContactsRequest) (*GetContactsResponse, error) {
+	query := url.Values{}
+	for k, v := range req.QueryHash {
+		query.Set(fmt.Sprintf("query[%s]", k), v)
+	}
+
+	for k, v := range req.SortHash {
+		query.Set(fmt.Sprintf("sort[%s]", k), v)
+	}
+
+	if len(req.Fields) > 0 {
+		query.Set("fields", strings.Join(req.Fields, ","))
+	}
+
+	query.Set("page", strconv.Itoa(int(req.Page)))
+	query.Set("perPage", strconv.Itoa(int(req.PerPage)))
+
+	if req.AdditionalFlags != nil {
+		query.Set("additionalFlags", *req.AdditionalFlags)
+	}
+
+	status, ret, err := g.roundTrip(ctx, http.MethodGet, "/v3/contacts", query, nil)
+	err = g.checkGetResponseError(status, ret, err)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &GetContactsResponse{}
+	jErr := json.Unmarshal(ret, &res.Contacts)
+	if jErr != nil {
+		return nil, ErrCouldNotUnmarshal
+	}
+
+	return res, nil
+}
+
+func (g *getResponseClient) GetContact(ctx context.Context, request *GetContactRequest) (*GetContactResponse, error) {
+	query := url.Values{}
+	if len(request.Fields) > 0 {
+		query.Set("fields", strings.Join(request.Fields, ","))
+	}
+
+	status, ret, err := g.roundTrip(ctx, http.MethodGet, fmt.Sprintf("/v3/contacts/%s", request.ID), query, nil)
+	err = g.checkGetResponseError(status, ret, err)
+	if err != nil {
+		return nil, err
+	}
+
+	c := Contact{}
+	jErr := json.Unmarshal(ret, &c)
+	if jErr != nil {
+		return nil, ErrCouldNotUnmarshal
+	}
+
+	return &GetContactResponse{
+		Contact: c,
+	}, nil
+}
+
+func (g *getResponseClient) UpdateContact(ctx context.Context, req *UpdateContactRequest) (*UpdateContactResponse, error) {
+	body, err := json.Marshal(req.NewData)
+	if err != nil {
+		return nil, err
+	}
+
+	status, ret, err := g.roundTrip(ctx, http.MethodPost, fmt.Sprintf("/v3/contacts/%s", req.ID), nil, body)
+	err = g.checkGetResponseError(status, ret, err)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &UpdateContactResponse{}
+	jErr := json.Unmarshal(ret, &result.Contact)
+	if jErr != nil {
+		return result, ErrCouldNotUnmarshal
+	}
+
+	return result, nil
+}
+
+func (g *getResponseClient) UpdateContactCustomFields(ctx context.Context, request *UpdateContactCustomFieldsRequest) (*UpdateContactCustomFieldsResponse, error) {
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
+	status, ret, err := g.roundTrip(ctx, http.MethodPost, fmt.Sprintf("/v3/contacts/%s/custom-fields", request.ID), nil, body)
+	err = g.checkGetResponseError(status, ret, err)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &UpdateContactCustomFieldsResponse{}
+	jErr := json.Unmarshal(ret, &result.Contact)
+	if jErr != nil {
+		return nil, ErrCouldNotUnmarshal
+	}
+
+	return result, nil
+}
+
+func (g *getResponseClient) DeleteContact(ctx context.Context, request *DeleteContactRequest) error {
+	query := url.Values{}
+	query.Set("messageId", request.MessageID)
+	query.Set("ipAddress", request.IpAddress)
+
+	status, ret, err := g.roundTrip(ctx, http.MethodDelete, fmt.Sprintf("/v3/contacts/%s", request.ID), query, nil)
+	return g.checkGetResponseError(status, ret, err)
+}
+
+func (g *getResponseClient) checkGetResponseError(status int, ret []byte, err error) error {
+	if err != nil {
+		return err
+	}
+
+	if status >= 200 && status < 400 {
+		return nil
+	}
+
+	grErr := &GetResponseError{}
+	jsonErr := json.Unmarshal(ret, grErr)
+	if jsonErr != nil {
+		return jsonErr
+	}
+
+	return grErr
+}
+
+func (g *getResponseClient) roundTrip(ctx context.Context, method string, path string, query url.Values, body []byte) (int, []byte, error) {
+	u, err := url.Parse(g.apiUrl + path)
+	if err != nil {
+		return 0, nil, err
+	}
+	u.RawQuery = query.Encode()
+
+	req, err := http.NewRequest(method, u.String(), bytes.NewBuffer(body))
+	if err != nil {
+		return 0, nil, err
+	}
+
 	h := http.Header{}
 	h.Set(XAuthTokenHeader, fmt.Sprintf("api-key %s", g.apiKey))
 	h.Set("Content-type", "application/json")
@@ -83,209 +247,20 @@ func (g *getResponseClient) buildDefaultHeaders() http.Header {
 		h.Set(XDomainHeader, g.domain)
 	}
 
-	return h
-}
-
-// NewClient returns a new pushy client
-func NewClient(apiUrl, apiKey, domain string, timeout time.Duration, beforeFunc beforeFunc, afterFunc afterFunc) Client {
-	return &getResponseClient{
-		c:      NewBaseClient(buildSvcFinder(apiUrl), "getresponse", true, timeout, nil, beforeFunc, afterFunc),
-		apiKey: apiKey,
-		apiUrl: apiUrl,
-		domain: domain,
-	}
-}
-
-func (g *getResponseClient) CreateContact(ctx context.Context, email string, name *string, dayOfCycle *int32, campaignID string, customFields []CustomField, ipAddress *string) error {
-	slug := "/v3/contacts"
-
-	bodyObj := createContactRequest{
-		Email:             email,
-		Name:              name,
-		DayOfCycle:        dayOfCycle,
-		Campaign:          Campaign{CampaignID: campaignID},
-		CustomFieldValues: customFields,
-		IPAddress:         ipAddress,
+	if ctx != nil {
+		req = req.WithContext(ctx)
 	}
 
-	body, err := ObjectToJSONReader(bodyObj)
+	resp, err := g.c.Do(req)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
+	defer resp.Body.Close()
 
-	status, ret, err := g.c.MakeRequest(ctx, http.MethodPost, slug, nil, g.buildDefaultHeaders(), body)
+	ret, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("%s: %s", err, string(ret))
+		return 0, nil, err
 	}
 
-	if status < 200 || status >= 400 {
-		//parse error
-		return g.parseError(ret)
-	}
-
-	return nil
-}
-
-func (g *getResponseClient) GetContacts(ctx context.Context, queryHash map[string]string, fields []string, sortHash map[string]string, page int32, perPage int32, additionalFlags *string) ([]Contact, error) {
-	slug := "/v3/contacts"
-
-	query := url.Values{}
-	for k, v := range queryHash {
-		query.Set(fmt.Sprintf("query[%s]", k), v)
-	}
-
-	for k, v := range sortHash {
-		query.Set(fmt.Sprintf("sort[%s]", k), v)
-	}
-
-	if len(fields) > 0 {
-		query.Set("fields", strings.Join(fields, ","))
-	}
-
-	query.Set("page", strconv.Itoa(int(page)))
-	query.Set("perPage", strconv.Itoa(int(perPage)))
-
-	if additionalFlags != nil {
-		query.Set("additionalFlags", *additionalFlags)
-	}
-
-	result := make([]Contact, 0)
-	status, ret, err := g.c.MakeRequest(ctx, http.MethodGet, slug, query, g.buildDefaultHeaders(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s", err, string(ret))
-	}
-
-	if status < 200 || status >= 400 {
-		//parse error
-		return result, g.parseError(ret)
-	}
-
-	jErr := json.Unmarshal(ret, &result)
-	if jErr != nil {
-		return result, ErrCouldNotUnmarshal
-	}
-
-	return result, nil
-}
-
-func (g *getResponseClient) GetContact(ctx context.Context, ID string, fields []string) (Contact, error) {
-	slug := fmt.Sprintf("/v3/contacts/%s", ID)
-
-	query := url.Values{}
-	if len(fields) > 0 {
-		query.Set("fields", strings.Join(fields, ","))
-	}
-
-	result := Contact{}
-	status, ret, err := g.c.MakeRequest(ctx, http.MethodGet, slug, query, g.buildDefaultHeaders(), nil)
-	if err != nil {
-		return result, fmt.Errorf("%s: %s", err, string(ret))
-	}
-
-	if status < 200 || status >= 400 {
-		//parse error
-		return result, g.parseError(ret)
-	}
-
-	jErr := json.Unmarshal(ret, &result)
-	if jErr != nil {
-		return result, ErrCouldNotUnmarshal
-	}
-
-	return result, nil
-}
-
-func (g *getResponseClient) UpdateContact(ctx context.Context, ID string, newData Contact) (Contact, error) {
-	result := Contact{}
-	slug := fmt.Sprintf("/v3/contacts/%s", ID)
-
-	body, err := ObjectToJSONReader(newData)
-	if err != nil {
-		return result, err
-	}
-
-	status, ret, err := g.c.MakeRequest(ctx, http.MethodPost, slug, nil, g.buildDefaultHeaders(), body)
-	if err != nil {
-		return result, fmt.Errorf("%s: %s", err, string(ret))
-	}
-
-	if status < 200 || status >= 400 {
-		//parse error
-		return result, g.parseError(ret)
-	}
-
-	jErr := json.Unmarshal(ret, &result)
-	if jErr != nil {
-		return result, ErrCouldNotUnmarshal
-	}
-
-	return result, nil
-}
-
-func (g *getResponseClient) UpdateContactCustomFields(ctx context.Context, ID string, customFields []CustomField) (Contact, error) {
-	result := Contact{}
-	slug := fmt.Sprintf("/v3/contacts/%s/custom-fields", ID)
-
-	bodyObj := updateCustomFieldRequest{customFields}
-	body, err := ObjectToJSONReader(bodyObj)
-	if err != nil {
-		return result, err
-	}
-
-	status, ret, err := g.c.MakeRequest(ctx, http.MethodPost, slug, nil, g.buildDefaultHeaders(), body)
-	if err != nil {
-		return result, fmt.Errorf("%s: %s", err, string(ret))
-	}
-
-	if status < 200 || status >= 400 {
-		//parse error
-		return result, g.parseError(ret)
-	}
-
-	jErr := json.Unmarshal(ret, &result)
-	if jErr != nil {
-		return result, ErrCouldNotUnmarshal
-	}
-
-	return result, nil
-}
-
-func (g *getResponseClient) DeleteContact(ctx context.Context, ID string, messageID string, ipAddress string) error {
-	slug := fmt.Sprintf("/v3/contacts/%s", ID)
-
-	query := url.Values{}
-	query.Set("messageId", messageID)
-	query.Set("ipAddress", ipAddress)
-
-	status, ret, err := g.c.MakeRequest(ctx, http.MethodDelete, slug, query, g.buildDefaultHeaders(), nil)
-	if err != nil {
-		return fmt.Errorf("%s: %s", err, string(ret))
-	}
-
-	if status < 200 || status >= 400 {
-		//parse error
-		return g.parseError(ret)
-	}
-
-	return nil
-}
-
-// Todo refact
-func (g *getResponseClient) parseError(resp []byte) error {
-	errRet := ErrorResponse{}
-	err := json.Unmarshal(resp, &errRet)
-	if err != nil {
-		return errors.New(fmt.Sprintf("could not unmarshal error response: %s", string(resp)))
-	}
-	return fmt.Errorf("%s: %s", errRet.Message, strings.Join(errRet.Context, ";"))
-}
-
-func buildSvcFinder(link string) func(string, bool) (url.URL, error) {
-	return func(serviceName string, tls bool) (url.URL, error) {
-		ret, err := url.Parse(link)
-		if err != nil || ret == nil {
-			return url.URL{}, err
-		}
-		return *ret, err
-	}
+	return resp.StatusCode, ret, nil
 }

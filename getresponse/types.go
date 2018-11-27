@@ -1,18 +1,5 @@
 package getresponse
 
-type createContactRequest struct {
-	Name              *string       `json:"name,omitempty"`
-	Email             string        `json:"email"` // required
-	DayOfCycle        *int32        `json:"dayOfCycle,omitempty"`
-	Campaign          Campaign      `json:"campaign"` // required
-	CustomFieldValues []CustomField `json:"customFieldValues,omitempty"`
-	IPAddress         *string       `json:"ipAddress,omitempty"`
-}
-
-type updateCustomFieldRequest struct {
-	VustomFieldValues []CustomField `json:"customFieldValues"`
-}
-
 // Campaign holds the representation of a campaign
 type Campaign struct {
 	CampaignID string  `json:"campaignId"` // required
@@ -62,28 +49,4 @@ type Contact struct {
 	IPAddress         *string       `json:"ipAddress,omitempty"`
 	Activities        *string       `json:"activities,omitempty"`
 	Scoring           *int64        `json:"scoring,omitempty"`
-}
-
-/* ErrorResponse holds an API error
-example error:
-{
-  "httpStatus": 400,
-  "code": 1000,
-  "codeDescription": "General error of validation process, more details should be in context section",
-  "message": "Custom field invalid",
-  "moreInfo": "https://apidocs.getresponse.com/en/v3/errors/1000",
-  "context": [
-    "Empty value. ID: y8jnp"
-  ],
-  "uuid": "5a42dd48-7f57-4919-9b32-391e594ce375"
-}
-*/
-type ErrorResponse struct {
-	HTTPStatus      int      `json:"httpStatus"`
-	ErrorCode       int      `json:"code"`
-	CodeDescription string   `json:"codeDescription"`
-	Message         string   `json:"message"`
-	MoreInfo        string   `json:"moreInfo"`
-	Context         []string `json:"context"`
-	UUID            string   `json:"uuid"`
 }

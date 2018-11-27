@@ -5,29 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
-
-	"reflect"
-
-	"github.com/healthimation/go-client/client"
 )
 
-func testClient(handler http.HandlerFunc, timeout time.Duration) (Client, *httptest.Server) {
+func testClient(handler http.HandlerFunc) (Client, *httptest.Server) {
 	ts := httptest.NewServer(handler)
-	finder := func(serviceName string, useTLS bool) (url.URL, error) {
-		ret, err := url.Parse(ts.URL)
-		if err != nil || ret == nil {
-			return url.URL{}, err
-		}
-		return *ret, err
-	}
-	c := &getResponseClient{
-		c:      client.NewBaseClient(finder, "gr", true, timeout, nil),
-		apiKey: "",
-	}
-	return c, ts
+	return NewClient(ts.URL, "", "", nil), ts
 }
 
 func makeInt32Ptr(v int32) *int32 {
@@ -42,7 +26,6 @@ func TestUnit_CreateContact(t *testing.T) {
 	type testcase struct {
 		name            string
 		handler         http.HandlerFunc
-		timeout         time.Duration
 		ctx             context.Context
 		email           string
 		contactName     *string
@@ -54,10 +37,9 @@ func TestUnit_CreateContact(t *testing.T) {
 	}
 
 	testcases := []testcase{
-		testcase{
+		{
 			name:            "base path",
 			handler:         http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			email:           "foo@bar.baz",
 			contactName:     makeStringPtr("foobar"),
@@ -66,13 +48,12 @@ func TestUnit_CreateContact(t *testing.T) {
 			ipAddress:       makeStringPtr("127.0.0.1"),
 			expectedErrCode: nil,
 		},
-		testcase{
+		{
 			name: "unmarshal error",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"not json"`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			email:           "foo@bar.baz",
 			contactName:     makeStringPtr("foobar"),
@@ -81,28 +62,34 @@ func TestUnit_CreateContact(t *testing.T) {
 			ipAddress:       makeStringPtr("127.0.0.1"),
 			expectedErrCode: makeStringPtr("ERROR_DECODING_ERROR"),
 		},
-		testcase{
+		{
 			name: "error response",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusConflict)
-				fmt.Fprint(w, `{"code":1008}`)
+				fmt.Fprint(w, `{"code":1008, "message":"conflict"}`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			email:           "foo@bar.baz",
 			contactName:     makeStringPtr("foobar"),
 			dayOfCycle:      makeInt32Ptr(5),
 			customFields:    []CustomField{CustomField{CustomFieldID: "some_key", Value: []string{"some_value"}}},
 			ipAddress:       makeStringPtr("127.0.0.1"),
-			expectedErrCode: makeStringPtr("1008"),
+			expectedErrCode: makeStringPtr("conflict"),
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, ts := testClient(tc.handler, tc.timeout)
+			c, ts := testClient(tc.handler)
 			defer ts.Close()
-			err := c.CreateContact(tc.ctx, tc.email, tc.contactName, tc.dayOfCycle, tc.campaignID, tc.customFields, tc.ipAddress)
+			err := c.CreateContact(tc.ctx, &CreateContactRequest{
+				Name:         tc.contactName,
+				Email:        tc.email,
+				DayOfCycle:   tc.dayOfCycle,
+				Campaign:     Campaign{CampaignID: tc.campaignID},
+				CustomFields: tc.customFields,
+				IPAddress:    tc.ipAddress,
+			})
 			if tc.expectedErrCode != nil || err != nil {
 				if tc.expectedErrCode == nil {
 					t.Fatalf("Unexpected error occurred (%#v)", err)
@@ -133,7 +120,7 @@ func TestUnit_GetContacts(t *testing.T) {
 	}
 
 	testcases := []testcase{
-		testcase{
+		{
 			name: "base path",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, `[{"name": "foobar", "email": "foo@bar.baz"}]`)
@@ -149,7 +136,7 @@ func TestUnit_GetContacts(t *testing.T) {
 			expectedErrCode:  nil,
 			expectedResponse: []Contact{Contact{Email: makeStringPtr("foo@bar.baz"), Name: makeStringPtr("foobar")}},
 		},
-		testcase{
+		{
 			name: "unmarshal error",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -159,25 +146,32 @@ func TestUnit_GetContacts(t *testing.T) {
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("ERROR_DECODING_ERROR"),
 		},
-		testcase{
+		{
 			name: "error response",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusConflict)
-				fmt.Fprint(w, `{"code":1008}`)
+				fmt.Fprint(w, `{"message":"conflict"}`)
 			}),
 			timeout:         5 * time.Second,
 			ctx:             context.Background(),
-			expectedErrCode: makeStringPtr("1008"),
+			expectedErrCode: makeStringPtr("conflict"),
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, ts := testClient(tc.handler, tc.timeout)
+			c, ts := testClient(tc.handler)
 			defer ts.Close()
-			ret, err := c.GetContacts(tc.ctx, tc.queryHash, tc.fields, tc.sortHash, tc.page, tc.perPage, tc.additionalFlags)
+			ret, err := c.GetContacts(tc.ctx, &GetContactsRequest{
+				QueryHash:       tc.queryHash,
+				Fields:          tc.fields,
+				SortHash:        tc.sortHash,
+				Page:            tc.page,
+				PerPage:         tc.perPage,
+				AdditionalFlags: tc.additionalFlags,
+			})
 			if err == nil && tc.expectedErrCode == nil {
-				if !reflect.DeepEqual(tc.expectedResponse, ret) {
+				if *ret.Contacts[0].Name != *tc.expectedResponse[0].Name || *ret.Contacts[0].Email != *tc.expectedResponse[0].Email {
 					t.Fatalf("Actual response (%#v) did not match expected (%#v)", ret, tc.expectedResponse)
 				}
 			} else {
@@ -197,7 +191,6 @@ func TestUnit_GetContact(t *testing.T) {
 	type testcase struct {
 		name             string
 		handler          http.HandlerFunc
-		timeout          time.Duration
 		ctx              context.Context
 		id               string
 		fields           []string
@@ -211,7 +204,6 @@ func TestUnit_GetContact(t *testing.T) {
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, `{"name": "foobar", "email": "foo@bar.baz"}`)
 			}),
-			timeout:          5 * time.Second,
 			ctx:              context.Background(),
 			id:               "foo",
 			fields:           []string{"name", "email"},
@@ -224,7 +216,6 @@ func TestUnit_GetContact(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"not json"`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("ERROR_DECODING_ERROR"),
 		},
@@ -234,7 +225,6 @@ func TestUnit_GetContact(t *testing.T) {
 				w.WriteHeader(http.StatusConflict)
 				fmt.Fprint(w, `{"code":1008}`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("1008"),
 		},
@@ -242,11 +232,11 @@ func TestUnit_GetContact(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, ts := testClient(tc.handler, tc.timeout)
+			c, ts := testClient(tc.handler)
 			defer ts.Close()
-			ret, err := c.GetContact(tc.ctx, tc.id, tc.fields)
+			ret, err := c.GetContact(tc.ctx, &GetContactRequest{ID: tc.id, Fields: tc.fields})
 			if err == nil && tc.expectedErrCode == nil {
-				if !reflect.DeepEqual(tc.expectedResponse, ret) {
+				if *ret.Contact.Name != *tc.expectedResponse.Name || *ret.Contact.Email != *tc.expectedResponse.Email {
 					t.Fatalf("Actual response (%#v) did not match expected (%#v)", ret, tc.expectedResponse)
 				}
 			} else {
@@ -266,7 +256,6 @@ func TestUnit_UpdateContact(t *testing.T) {
 	type testcase struct {
 		name             string
 		handler          http.HandlerFunc
-		timeout          time.Duration
 		ctx              context.Context
 		id               string
 		newData          Contact
@@ -280,7 +269,6 @@ func TestUnit_UpdateContact(t *testing.T) {
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, `{"name": "foobar", "email": "foo@bar.baz"}`)
 			}),
-			timeout:          5 * time.Second,
 			ctx:              context.Background(),
 			id:               "foo",
 			newData:          Contact{Name: makeStringPtr("foobar")},
@@ -293,7 +281,6 @@ func TestUnit_UpdateContact(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"not json"`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("ERROR_DECODING_ERROR"),
 		},
@@ -303,7 +290,6 @@ func TestUnit_UpdateContact(t *testing.T) {
 				w.WriteHeader(http.StatusConflict)
 				fmt.Fprint(w, `{"code":1008}`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("1008"),
 		},
@@ -311,11 +297,11 @@ func TestUnit_UpdateContact(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, ts := testClient(tc.handler, tc.timeout)
+			c, ts := testClient(tc.handler)
 			defer ts.Close()
-			ret, err := c.UpdateContact(tc.ctx, tc.id, tc.newData)
+			ret, err := c.UpdateContact(tc.ctx, &UpdateContactRequest{ID: tc.id, NewData: tc.newData})
 			if err == nil && tc.expectedErrCode == nil {
-				if !reflect.DeepEqual(tc.expectedResponse, ret) {
+				if *ret.Contact.Name != *tc.expectedResponse.Name || *ret.Contact.Email != *tc.expectedResponse.Email {
 					t.Fatalf("Actual response (%#v) did not match expected (%#v)", ret, tc.expectedResponse)
 				}
 			} else {
@@ -335,7 +321,6 @@ func TestUnit_UpdateContactCustomFields(t *testing.T) {
 	type testcase struct {
 		name             string
 		handler          http.HandlerFunc
-		timeout          time.Duration
 		ctx              context.Context
 		id               string
 		customFields     []CustomField
@@ -349,7 +334,6 @@ func TestUnit_UpdateContactCustomFields(t *testing.T) {
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, `{"name": "foobar", "email": "foo@bar.baz"}`)
 			}),
-			timeout:          5 * time.Second,
 			ctx:              context.Background(),
 			id:               "foo",
 			customFields:     []CustomField{CustomField{CustomFieldID: "some_key", Value: []string{"some_value"}}},
@@ -362,7 +346,6 @@ func TestUnit_UpdateContactCustomFields(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"not json"`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("ERROR_DECODING_ERROR"),
 		},
@@ -370,9 +353,8 @@ func TestUnit_UpdateContactCustomFields(t *testing.T) {
 			name: "error response",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusConflict)
-				fmt.Fprint(w, `{"code":1008}`)
+				fmt.Fprint(w, `{"message":1008}`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("1008"),
 		},
@@ -380,11 +362,11 @@ func TestUnit_UpdateContactCustomFields(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, ts := testClient(tc.handler, tc.timeout)
+			c, ts := testClient(tc.handler)
 			defer ts.Close()
-			ret, err := c.UpdateContactCustomFields(tc.ctx, tc.id, tc.customFields)
+			ret, err := c.UpdateContactCustomFields(tc.ctx, &UpdateContactCustomFieldsRequest{ID: tc.id, CustomFields: tc.customFields})
 			if err == nil && tc.expectedErrCode == nil {
-				if !reflect.DeepEqual(tc.expectedResponse, ret) {
+				if *ret.Contact.Name != *tc.expectedResponse.Name || *ret.Contact.Email != *tc.expectedResponse.Email {
 					t.Fatalf("Actual response (%#v) did not match expected (%#v)", ret, tc.expectedResponse)
 				}
 			} else {
@@ -404,7 +386,6 @@ func TestUnit_DeleteContact(t *testing.T) {
 	type testcase struct {
 		name            string
 		handler         http.HandlerFunc
-		timeout         time.Duration
 		ctx             context.Context
 		id              string
 		messageID       string
@@ -416,7 +397,6 @@ func TestUnit_DeleteContact(t *testing.T) {
 		testcase{
 			name:            "base path",
 			handler:         http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			id:              "123",
 			messageID:       "hello world",
@@ -429,7 +409,6 @@ func TestUnit_DeleteContact(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprint(w, `{"not json"`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("ERROR_DECODING_ERROR"),
 		},
@@ -437,9 +416,8 @@ func TestUnit_DeleteContact(t *testing.T) {
 			name: "error response",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusConflict)
-				fmt.Fprint(w, `{"code":1008}`)
+				fmt.Fprint(w, `{"message":1008}`)
 			}),
-			timeout:         5 * time.Second,
 			ctx:             context.Background(),
 			expectedErrCode: makeStringPtr("1008"),
 		},
@@ -447,9 +425,9 @@ func TestUnit_DeleteContact(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, ts := testClient(tc.handler, tc.timeout)
+			c, ts := testClient(tc.handler)
 			defer ts.Close()
-			err := c.DeleteContact(tc.ctx, tc.id, tc.messageID, tc.ipAddress)
+			err := c.DeleteContact(tc.ctx, &DeleteContactRequest{ID: tc.id, MessageID: tc.messageID, IpAddress: tc.ipAddress})
 			if tc.expectedErrCode != nil || err != nil {
 				if tc.expectedErrCode == nil {
 					t.Fatalf("Unexpected error occurred (%#v)", err)
