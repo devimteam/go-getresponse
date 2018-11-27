@@ -240,11 +240,10 @@ func (g *getResponseClient) roundTrip(ctx context.Context, method string, path s
 		return 0, nil, err
 	}
 
-	h := http.Header{}
-	h.Set(XAuthTokenHeader, fmt.Sprintf("api-key %s", g.apiKey))
-	h.Set("Content-type", "application/json")
+	req.Header.Set(XAuthTokenHeader, fmt.Sprintf("api-key %s", g.apiKey))
+	req.Header.Set("Content-type", "application/json")
 	if g.domain != "" {
-		h.Set(XDomainHeader, g.domain)
+		req.Header.Set(XDomainHeader, g.domain)
 	}
 
 	if ctx != nil {
