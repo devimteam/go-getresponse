@@ -14,3 +14,14 @@ type GetResponseError struct {
 func (g *GetResponseError) Error() string {
 	return g.Message
 }
+
+// GetResponseErrorRaw holds an API response that could not be unmarshaled
+type GetResponseErrorRaw struct {
+	Err        error
+	HTTPStatus int
+	HTTPBody   []byte
+}
+
+func (g *GetResponseErrorRaw) Error() string {
+	return g.Err.Error()
+}

@@ -129,7 +129,11 @@ func (g *getResponseClient) GetContacts(ctx context.Context, req *GetContactsReq
 	res := &GetContactsResponse{}
 	jErr := json.Unmarshal(ret, &res.Contacts)
 	if jErr != nil {
-		return nil, ErrCouldNotUnmarshal
+		return nil, &GetResponseErrorRaw{
+			Err:        ErrCouldNotUnmarshal,
+			HTTPStatus: status,
+			HTTPBody:   ret,
+		}
 	}
 
 	return res, nil
@@ -150,7 +154,11 @@ func (g *getResponseClient) GetContact(ctx context.Context, request *GetContactR
 	c := Contact{}
 	jErr := json.Unmarshal(ret, &c)
 	if jErr != nil {
-		return nil, ErrCouldNotUnmarshal
+		return nil, &GetResponseErrorRaw{
+			Err:        ErrCouldNotUnmarshal,
+			HTTPStatus: status,
+			HTTPBody:   ret,
+		}
 	}
 
 	return &GetContactResponse{
@@ -173,7 +181,11 @@ func (g *getResponseClient) UpdateContact(ctx context.Context, req *UpdateContac
 	result := &UpdateContactResponse{}
 	jErr := json.Unmarshal(ret, &result.Contact)
 	if jErr != nil {
-		return result, ErrCouldNotUnmarshal
+		return nil, &GetResponseErrorRaw{
+			Err:        ErrCouldNotUnmarshal,
+			HTTPStatus: status,
+			HTTPBody:   ret,
+		}
 	}
 
 	return result, nil
@@ -195,7 +207,11 @@ func (g *getResponseClient) UpdateContactCustomFields(ctx context.Context, reque
 	result := &UpdateContactCustomFieldsResponse{}
 	jErr := json.Unmarshal(ret, &result.Contact)
 	if jErr != nil {
-		return nil, ErrCouldNotUnmarshal
+		return nil, &GetResponseErrorRaw{
+			Err:        ErrCouldNotUnmarshal,
+			HTTPStatus: status,
+			HTTPBody:   ret,
+		}
 	}
 
 	return result, nil
@@ -222,7 +238,11 @@ func (g *getResponseClient) checkGetResponseError(status int, ret []byte, err er
 	grErr := &GetResponseError{}
 	jsonErr := json.Unmarshal(ret, grErr)
 	if jsonErr != nil {
-		return jsonErr
+		return &GetResponseErrorRaw{
+			Err:        jsonErr,
+			HTTPStatus: status,
+			HTTPBody:   ret,
+		}
 	}
 
 	return grErr
